@@ -27,17 +27,18 @@ Add-Health-Project/
 │
 ├── shared_setup.R # Shared data cleaning & variable construction
 │
+├── simulations/ # SIMULATION STUDIES
+│ ├── sim_method_1.Rmd # Simulation for Method 1
+│ ├── sim_method_2.Rmd # Simulation for Method 2
+│ ├── sim_method_3.Rmd # Simulation for Method 3
+│ └── simulation.Rmd # Simulation Figures
+│
 ├── analysis/ # REAL DATA ANALYSIS
 │ ├── real_method_1.Rmd # Logistic regression (Wald inference)
 │ ├── real_method_2.Rmd # Spline logistic regression + bootstrap
 │ └── real_method_3.Rmd # Logistic regression + jackknife
 │
-├── simulations/ # SIMULATION STUDIES
-│ ├── sim_method_1.Rmd # Simulation for Method 1
-│ ├── sim_method_2.Rmd # Simulation for Method 2
-│ └── sim_method_3.Rmd # Simulation for Method 3
-│
-└── figures/ # Auto-generated plots
+└── Discussion
 
 ```
 
