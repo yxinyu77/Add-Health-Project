@@ -1,0 +1,89 @@
+---
+title: "simulation"
+output: html_document
+date: "2025-12-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+############################################################
+# SIMULATION PLOTS (run AFTER you have the .rds outputs)
+############################################################
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# ---- read saved results ----
+m1 <- readRDS("method1_glm_wald_results.rds") %>%
+  transmute(
+    scenario,
+    method = "Method 1: Linear GLM (Wald)",
+    coverage = coverage,
+    exp_width = exp_width
+  )
+
+m2 <- readRDS("method2_spline_boot_contrast_results.rds") %>%
+  transmute(
+    scenario,
+    method = "Method 2: Spline GLM (Bootstrap contrast)",
+    coverage = coverage,
+    exp_width = exp_width
+  )
+
+m3 <- readRDS("method3_jackknife_results.rds") %>%
+  transmute(
+    scenario,
+    method = "Method 3: Linear GLM (Jackknife)",
+    coverage = coverage,
+    exp_width = exp_width
+  )
+
+sim_sum <- bind_rows(m1, m2, m3) %>%
+  mutate(
+    scenario = factor(scenario, levels = c("A_linear", "B_quadratic", "C_interaction")),
+    method = factor(method, levels = c(
+      "Method 1: Linear GLM (Wald)",
+      "Method 3: Linear GLM (Jackknife)",
+      "Method 2: Spline GLM (Bootstrap contrast)"
+    ))
+  )
+
+# ---- FIGURE 1: Coverage ----
+p_cov <- ggplot(sim_sum, aes(x = scenario, y = coverage, group = method, shape = method)) +
+  geom_hline(yintercept = 0.95, linetype = 2) +
+  geom_point(size = 3) +
+  geom_line() +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(
+    x = "Simulation scenario",
+    y = "Empirical 95% CI coverage",
+    shape = "Method",
+    title = "Coverage across methods and scenarios"
+  ) +
+  theme_bw()
+
+ggsave("fig_sim_coverage.png", p_cov, width = 7, height = 4.2, dpi = 300)
+
+# ---- FIGURE 2: Expected interval width ----
+p_wid <- ggplot(sim_sum, aes(x = scenario, y = exp_width, group = method, shape = method)) +
+  geom_point(size = 3) +
+  geom_line() +
+  labs(
+    x = "Simulation scenario",
+    y = "Expected CI width",
+    shape = "Method",
+    title = "Expected interval width across methods and scenarios"
+  ) +
+  theme_bw()
+
+ggsave("fig_sim_width.png", p_wid, width = 7, height = 4.2, dpi = 300)
+
+# Show in RStudio viewer
+p_cov
+p_wid
+
+```
+

@@ -1,0 +1,103 @@
+---
+title: "method 3"
+output: html_document
+date: "2025-12-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+############################################################
+# METHOD 3 SIMULATION: Grouped jackknife CI for beta1
+############################################################
+set.seed(406)
+
+inv_logit <- function(z) 1/(1+exp(-z))
+
+beta0 <- -1.2
+beta1 <- -0.06
+betaF <-  0.35
+beta2 <-  0.01
+betaInt <- -0.05
+
+gen_X <- function(n) {
+  mvpa <- pmin(pmax(round(rnorm(n, mean = 6, sd = 3)), 0), 15)
+  female <- rbinom(n, 1, 0.52)
+  data.frame(mvpa_week = mvpa, female = female)
+}
+
+genY_A <- function(X) {
+  eta <- beta0 + beta1*X$mvpa_week + betaF*X$female
+  rbinom(nrow(X), 1, inv_logit(eta))
+}
+genY_B <- function(X) {
+  eta <- beta0 + beta1*X$mvpa_week + beta2*(X$mvpa_week^2) + betaF*X$female
+  rbinom(nrow(X), 1, inv_logit(eta))
+}
+genY_C <- function(X) {
+  eta <- beta0 + beta1*X$mvpa_week + betaF*X$female + betaInt*(X$mvpa_week*X$female)
+  rbinom(nrow(X), 1, inv_logit(eta))
+}
+
+fit_beta1 <- function(df) {
+  fit <- glm(obese ~ mvpa_week + female, family = binomial(), data = df)
+  unname(coef(fit)["mvpa_week"])
+}
+
+jackknife_ci <- function(df, G = 50, alpha = 0.05) {
+  n <- nrow(df)
+  grp <- sample(rep(1:G, length.out = n))
+  theta_full <- fit_beta1(df)
+  theta_g <- numeric(G)
+  for (g in 1:G) {
+    theta_g[g] <- fit_beta1(df[grp != g, , drop = FALSE])
+  }
+  theta_bar <- mean(theta_g)
+  var_jk <- (G - 1)/G * sum((theta_g - theta_bar)^2)
+  se_jk <- sqrt(var_jk)
+  z <- qnorm(1 - alpha/2)
+  ci <- c(theta_full - z*se_jk, theta_full + z*se_jk)
+  list(est = theta_full, ci = ci)
+}
+
+run_m3 <- function(genY, scenario_name, M = 500, n = 3000, G = 50) {
+  est <- numeric(M); cover <- numeric(M); width <- numeric(M); rt <- numeric(M)
+  for (m in 1:M) {
+    if (m %% 25 == 0) message(scenario_name, ": ", m, "/", M)
+    X <- gen_X(n)
+    y <- genY(X)
+    df <- cbind(X, obese = y)
+
+    t0 <- proc.time()[3]
+    out <- jackknife_ci(df, G = G)
+    rt[m] <- proc.time()[3] - t0
+
+    est[m] <- out$est
+    cover[m] <- as.numeric(out$ci[1] <= beta1 && beta1 <= out$ci[2])
+    width[m] <- out$ci[2] - out$ci[1]
+  }
+  data.frame(
+    scenario = scenario_name,
+    M = M, n = n, G_groups = G,
+    truth_beta1 = beta1,
+    bias = mean(est - beta1),
+    mc_sd = sd(est),
+    mse = mean((est - beta1)^2),
+    coverage = mean(cover),
+    exp_width = mean(width),
+    mean_runtime_sec = mean(rt)
+  )
+}
+
+res_A <- run_m3(genY_A, "A_linear", M = 300, n = 3000, G = 50)
+res_B <- run_m3(genY_B, "B_quadratic", M = 300, n = 3000, G = 50)
+res_C <- run_m3(genY_C, "C_interaction", M = 300, n = 3000, G = 50)
+
+out <- rbind(res_A, res_B, res_C)
+print(out)
+saveRDS(out, file = "method3_jackknife_results.rds")
+
+```
+

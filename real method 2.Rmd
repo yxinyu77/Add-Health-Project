@@ -1,0 +1,161 @@
+---
+title: "real method 2"
+output: html_document
+date: "2025-12-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# ==========================================
+# Method 2: Spline logistic regression + bootstrap CI for probability contrast (REAL DATA)
+# Outcome: adult obesity (Wave IV, BMI>=30)
+# Exposure: adolescent MVPA composite (Wave I)
+# Model: logit P(obese=1) = beta0 + f(MVPA) + covariates
+# f(.) implemented via natural spline basis (df=4)
+# Estimand: Delta = P(obese | MVPA=10, Z=Zbar) - P(obese | MVPA=0, Z=Zbar)
+# Inference: nonparametric bootstrap percentile CI for Delta
+# ==========================================
+
+library(dplyr)
+library(ggplot2)
+library(splines)
+
+source("shared_setup.R")
+dat <- make_analysis_dataset("wave1.csv", "wave4.csv")
+
+# ---- Fit spline logistic regression (covariates per essay) ----
+df_spline <- 4
+
+fit2 <- glm(
+  obese ~ ns(mvpa, df = df_spline) +
+    female +
+    age_w1 +
+    race_eth +
+    income_w1 +
+    parent_educ_w1 +
+    bmi_w1,
+  data = dat,
+  family = binomial(link = "logit")
+)
+
+# ---- Define the probability-contrast estimand ----
+mvpa_lo <- 0
+mvpa_hi <- 10
+
+# "Typical" covariate values (Zbar) for the contrast
+# Use means for numeric covariates; choose a reference race/eth category that exists.
+ref_race <- levels(dat$race_eth)[which(levels(dat$race_eth) %in% unique(na.omit(dat$race_eth)))[1]]
+
+zbar <- dat %>%
+  summarise(
+    female = mean(female),
+    age_w1 = mean(age_w1, na.rm = TRUE),
+    income_w1 = mean(income_w1, na.rm = TRUE),
+    parent_educ_w1 = mean(parent_educ_w1, na.rm = TRUE),
+    bmi_w1 = mean(bmi_w1, na.rm = TRUE)
+  )
+
+make_newdata <- function(mvpa_value, zbar_row, ref_race_level, dat_levels) {
+  data.frame(
+    mvpa = mvpa_value,
+    female = zbar_row$female,
+    age_w1 = zbar_row$age_w1,
+    income_w1 = zbar_row$income_w1,
+    parent_educ_w1 = zbar_row$parent_educ_w1,
+    bmi_w1 = zbar_row$bmi_w1,
+    race_eth = factor(ref_race_level, levels = dat_levels)
+  )
+}
+
+pred_prob <- function(fit, mvpa_value, zbar_row, ref_race_level, dat_levels) {
+  newd <- make_newdata(mvpa_value, zbar_row, ref_race_level, dat_levels)
+  as.numeric(predict(fit, newdata = newd, type = "response"))
+}
+
+p_hi <- pred_prob(fit2, mvpa_hi, zbar, ref_race, levels(dat$race_eth))
+p_lo <- pred_prob(fit2, mvpa_lo, zbar, ref_race, levels(dat$race_eth))
+contrast_hat <- p_hi - p_lo
+
+# ---- Bootstrap percentile CI for the contrast ----
+set.seed(123)
+B <- 1000
+n <- nrow(dat)
+boot_vals <- numeric(B)
+
+for (b in 1:B) {
+  idx <- sample.int(n, size = n, replace = TRUE)
+  db <- dat[idx, ]
+
+  fb <- glm(
+    obese ~ ns(mvpa, df = df_spline) +
+      female +
+      age_w1 +
+      race_eth +
+      income_w1 +
+      parent_educ_w1 +
+      bmi_w1,
+    data = db,
+    family = binomial(link = "logit")
+  )
+
+  boot_vals[b] <- pred_prob(fb, mvpa_hi, zbar, ref_race, levels(dat$race_eth)) -
+    pred_prob(fb, mvpa_lo, zbar, ref_race, levels(dat$race_eth))
+}
+
+ci <- as.numeric(quantile(boot_vals, probs = c(0.025, 0.975), na.rm = TRUE))
+
+cat("Method 2 estimand: Delta = P(obese|MVPA=10,Z=Zbar) - P(obese|MVPA=0,Z=Zbar)\n")
+cat("Point estimate Delta_hat =", round(contrast_hat, 4), "\n")
+cat("Bootstrap 95% CI =", paste0("[", round(ci[1], 4), ", ", round(ci[2], 4), "]"), "\n")
+
+# ---- Figure: spline fitted curve vs MVPA (covariates held at typical values) ----
+mvpa_seq <- seq(min(dat$mvpa), max(dat$mvpa), length.out = 200)
+
+grid <- data.frame(
+  mvpa = mvpa_seq,
+  female = zbar$female,
+  age_w1 = zbar$age_w1,
+  income_w1 = zbar$income_w1,
+  parent_educ_w1 = zbar$parent_educ_w1,
+  bmi_w1 = zbar$bmi_w1,
+  race_eth = factor(ref_race, levels = levels(dat$race_eth))
+)
+
+grid$p <- predict(fit2, newdata = grid, type = "response")
+
+p_curve <- ggplot(grid, aes(x = mvpa, y = p)) +
+  geom_line() +
+  labs(
+    x = "Weekly MVPA bouts (midpoint composite)",
+    y = "Predicted probability of adult obesity",
+    title = "Method 2: Spline-based fitted obesity risk vs MVPA (covariates held at typical values)"
+  )
+
+ggsave("fig_method2_spline_curve.png", p_curve, width = 7, height = 4, dpi = 300)
+p_curve
+
+# ---- Save results for paper pipeline ----
+saveRDS(
+  list(
+    model = fit2,
+    df_spline = df_spline,
+    mvpa_lo = mvpa_lo,
+    mvpa_hi = mvpa_hi,
+    zbar = zbar,
+    ref_race = ref_race,
+    contrast = contrast_hat,
+    boot = boot_vals,
+    ci = ci
+  ),
+  "method2_spline_boot_contrast_results.rds"
+)
+
+```
+
+
+
+

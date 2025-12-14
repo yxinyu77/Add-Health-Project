@@ -1,0 +1,121 @@
+---
+title: "method 2"
+output: html_document
+date: "2025-12-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+############################################################
+# METHOD 2 SIMULATION: Spline GLM + bootstrap CI for contrast
+############################################################
+set.seed(406)
+library(splines)
+
+inv_logit <- function(z) 1/(1+exp(-z))
+
+beta0 <- -1.2
+beta1 <- -0.06
+betaF <-  0.35
+beta2 <-  0.01
+betaInt <- -0.05
+
+gen_X <- function(n) {
+  mvpa <- pmin(pmax(round(rnorm(n, mean = 6, sd = 3)), 0), 15)
+  female <- rbinom(n, 1, 0.52)
+  data.frame(mvpa_week = mvpa, female = female)
+}
+
+genY_A <- function(X) {
+  eta <- beta0 + beta1*X$mvpa_week + betaF*X$female
+  rbinom(nrow(X), 1, inv_logit(eta))
+}
+genY_B <- function(X) {
+  eta <- beta0 + beta1*X$mvpa_week + beta2*(X$mvpa_week^2) + betaF*X$female
+  rbinom(nrow(X), 1, inv_logit(eta))
+}
+genY_C <- function(X) {
+  eta <- beta0 + beta1*X$mvpa_week + betaF*X$female + betaInt*(X$mvpa_week*X$female)
+  rbinom(nrow(X), 1, inv_logit(eta))
+}
+
+contrast_hat <- function(df, df_spline = 4) {
+  fit <- glm(obese ~ ns(mvpa_week, df = df_spline) + female,
+             family = binomial(), data = df)
+  fbar <- mean(df$female)
+  new0  <- data.frame(mvpa_week = 0,  female = fbar)
+  new10 <- data.frame(mvpa_week = 10, female = fbar)
+  p0  <- predict(fit, newdata = new0,  type = "response")
+  p10 <- predict(fit, newdata = new10, type = "response")
+  unname(p10 - p0)
+}
+
+boot_ci_contrast <- function(df, B = 300, df_spline = 4, alpha = 0.05) {
+  n <- nrow(df)
+  tstat <- numeric(B)
+  for (b in 1:B) {
+    idx <- sample.int(n, n, replace = TRUE)
+    tstat[b] <- contrast_hat(df[idx, , drop = FALSE], df_spline = df_spline)
+  }
+  ci <- as.numeric(quantile(tstat, c(alpha/2, 1 - alpha/2), na.rm = TRUE))
+  list(est = mean(tstat, na.rm = TRUE), ci = ci)
+}
+
+# True contrast from the known DGP (female fixed at 0.52)
+true_contrast <- function(scenario) {
+  fbar <- 0.52
+  mv <- c(0, 10)
+  if (scenario == "A") {
+    eta <- beta0 + beta1*mv + betaF*fbar
+  } else if (scenario == "B") {
+    eta <- beta0 + beta1*mv + beta2*(mv^2) + betaF*fbar
+  } else {
+    eta <- beta0 + beta1*mv + betaF*fbar + betaInt*(mv*fbar)
+  }
+  p <- inv_logit(eta)
+  unname(p[2] - p[1])
+}
+
+run_m2 <- function(genY, scenario_name, truth, M = 200, n = 3000, B = 300, df_spline = 4) {
+  est <- numeric(M); cover <- numeric(M); width <- numeric(M); rt <- numeric(M)
+  for (m in 1:M) {
+    if (m %% 20 == 0) message(scenario_name, ": ", m, "/", M)
+    X <- gen_X(n)
+    y <- genY(X)
+    df <- cbind(X, obese = y)
+
+    t0 <- proc.time()[3]
+    out <- boot_ci_contrast(df, B = B, df_spline = df_spline)
+    rt[m] <- proc.time()[3] - t0
+
+    est[m] <- out$est
+    cover[m] <- as.numeric(out$ci[1] <= truth && truth <= out$ci[2])
+    width[m] <- out$ci[2] - out$ci[1]
+  }
+  data.frame(
+    scenario = scenario_name,
+    M = M, n = n, B_boot = B, df_spline = df_spline,
+    truth_contrast = truth,
+    bias = mean(est - truth),
+    mc_sd = sd(est),
+    mse = mean((est - truth)^2),
+    coverage = mean(cover),
+    exp_width = mean(width),
+    mean_runtime_sec = mean(rt)
+  )
+}
+
+res_A <- run_m2(genY_A, "A_linear", true_contrast("A"), M = 150, n = 3000, B = 200, df_spline = 4)
+res_B <- run_m2(genY_B, "B_quadratic", true_contrast("B"), M = 150, n = 3000, B = 200, df_spline = 4)
+res_C <- run_m2(genY_C, "C_interaction", true_contrast("C"), M = 150, n = 3000, B = 200, df_spline = 4)
+
+out <- rbind(res_A, res_B, res_C)
+print(out)
+saveRDS(out, file = "method2_spline_boot_contrast_results.rds")
+
+```
+

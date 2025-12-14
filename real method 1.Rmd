@@ -1,0 +1,165 @@
+---
+title: "real method 1"
+output: html_document
+date: "2025-12-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# ==========================================
+# Method 1: Linear logistic regression + Wald inference (REAL DATA)
+# Outcome: adult obesity (Wave IV, BMI>=30)
+# Exposure: adolescent MVPA composite (Wave I)
+# Covariates (per essay): sex, age, race/ethnicity, income, parental education, baseline BMI
+# Note: public-use files do NOT contain weights/PSU/strata -> unweighted associational analysis
+# ==========================================
+
+library(dplyr)
+library(ggplot2)
+
+# Use the shared, essay-aligned data pipeline
+source("shared_setup.R")
+dat <- make_analysis_dataset("wave1.csv", "wave4.csv")
+
+cat("Method 1 analytic N =", nrow(dat), "\n")
+cat("Obesity prevalence =", round(mean(dat$obese), 4), "\n")
+summary(dat$mvpa)
+
+# ---- Fit linear logistic regression (Wald inference) ----
+fit1 <- glm(
+  obese ~ mvpa +
+    female +
+    age_w1 +
+    race_eth +
+    income_w1 +
+    parent_educ_w1 +
+    bmi_w1,
+  data = dat,
+  family = binomial(link = "logit")
+)
+
+# ---- TRUE Wald inference (model-based SE + normal approx) ----
+b  <- coef(fit1)
+se <- sqrt(diag(vcov(fit1)))
+z  <- qnorm(0.975)
+
+ci_low  <- b - z * se
+ci_high <- b + z * se
+
+zstat <- b / se
+pval  <- 2 * pnorm(abs(zstat), lower.tail = FALSE)
+
+tab_wald <- data.frame(
+  term = names(b),
+  estimate_logodds = b,
+  se = se,
+  ci_low_logodds = ci_low,
+  ci_high_logodds = ci_high,
+  p_value = pval,
+  OR = exp(b),
+  OR_low = exp(ci_low),
+  OR_high = exp(ci_high),
+  row.names = NULL
+) %>%
+  mutate(
+    term = dplyr::recode(
+      term,
+      `(Intercept)` = "Intercept",
+      mvpa = "MVPA (per 1 bout/week)",
+      female = "Female (1 vs 0)",
+      age_w1 = "Age at Wave I (years)",
+      income_w1 = "Household income (Wave I)",
+      parent_educ_w1 = "Parental education (Wave I)",
+      bmi_w1 = "Baseline BMI (Wave I self-report)"
+    ),
+    # Make race/ethnicity terms readable
+    term = ifelse(grepl("^race_eth", term),
+                  gsub("^race_eth", "Race/ethnicity: ", term),
+                  term)
+  ) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 4)))
+
+print(tab_wald)
+
+# Save results for your paper pipeline
+saveRDS(list(model = fit1, table = tab_wald), "method1_glm_wald_results.rds")
+
+# ---- Optional Figure: predicted obesity probability vs MVPA (male vs female) ----
+mvpa_seq <- seq(min(dat$mvpa), max(dat$mvpa), length.out = 200)
+
+# pick a reference race/eth that exists
+ref_race <- levels(dat$race_eth)[which(levels(dat$race_eth) %in% unique(na.omit(dat$race_eth)))[1]]
+
+base_vals <- dat %>%
+  summarise(
+    age_w1 = mean(age_w1, na.rm = TRUE),
+    income_w1 = mean(income_w1, na.rm = TRUE),
+    parent_educ_w1 = mean(parent_educ_w1, na.rm = TRUE),
+    bmi_w1 = mean(bmi_w1, na.rm = TRUE)
+  )
+
+grid <- expand.grid(
+  mvpa = mvpa_seq,
+  female = c(0, 1)
+) %>%
+  as_tibble() %>%
+  mutate(
+    age_w1 = base_vals$age_w1,
+    income_w1 = base_vals$income_w1,
+    parent_educ_w1 = base_vals$parent_educ_w1,
+    bmi_w1 = base_vals$bmi_w1,
+    race_eth = factor(ref_race, levels = levels(dat$race_eth)),
+    sex_label = ifelse(female == 1, "Female", "Male")
+  )
+
+# do predict AFTER all columns exist
+grid$pred <- predict(fit1, newdata = grid, type = "response")
+
+p_m1 <- ggplot(grid, aes(x = mvpa, y = pred, linetype = sex_label)) +
+  geom_line() +
+  labs(
+    x = "Weekly MVPA bouts (midpoint composite)",
+    y = "Predicted probability of adult obesity",
+    title = "Method 1: Linear logistic regression predictions by sex",
+    linetype = "Sex"
+  )
+
+ggsave("fig_method1_glm_predictions.png", p_m1, width = 7, height = 4, dpi = 300)
+p_m1
+
+
+```
+
+
+```{r}
+dat_cat <- dat %>%
+mutate(
+mvpa_cat = cut(
+mvpa,
+breaks = c(-Inf, 0, 4, 9, Inf),
+labels = c("0", "1--4", "5--9", ">=10"),
+right = TRUE
+)
+) %>%
+group_by(mvpa_cat) %>%
+summarise(
+prev_obese = mean(obese),
+n = n(),
+.groups = "drop"
+)
+
+p2 <- ggplot(dat_cat, aes(x = mvpa_cat, y = prev_obese)) +
+geom_col() +
+labs(
+x = "Adolescent MVPA category (bouts/week)",
+y = "Adult obesity prevalence (Wave IV)",
+title = "Adult obesity prevalence by adolescent MVPA"
+)
+
+ggsave("fig2_obesity_by_mvpa_category.png", p2, width = 7, height = 4, dpi = 300)
+p2
+```
+

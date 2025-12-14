@@ -1,0 +1,97 @@
+---
+title: "real method 3"
+output: html_document
+date: "2025-12-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# ==========================================
+# Method 3: Grouped jackknife variance for linear logistic regression (REAL DATA)
+# Model: same as Method 1 (linear MVPA + rich covariate set)
+# Inference: grouped delete-one-group jackknife SE for MVPA slope (beta_mvpa)
+# ==========================================
+
+source("shared_setup.R")
+dat <- make_analysis_dataset("wave1.csv", "wave4.csv")
+
+# ---- Base parametric model (same as Method 1) ----
+fit0 <- glm(
+  obese ~ mvpa +
+    female +
+    age_w1 +
+    race_eth +
+    income_w1 +
+    parent_educ_w1 +
+    bmi_w1,
+  data = dat,
+  family = binomial(link = "logit")
+)
+
+beta_full <- coef(fit0)[["mvpa"]]
+
+# ---- Grouped jackknife ----
+set.seed(123)
+G <- 50  # use 50 unless you have a strong reason; this is what your paper described
+n <- nrow(dat)
+
+# Assign approximately equal-sized groups
+groups <- sample(rep(seq_len(G), length.out = n))
+
+beta_g <- numeric(G)
+
+for (g in seq_len(G)) {
+  d_minus <- dat[groups != g, , drop = FALSE]
+  fg <- glm(
+    obese ~ mvpa +
+      female +
+      age_w1 +
+      race_eth +
+      income_w1 +
+      parent_educ_w1 +
+      bmi_w1,
+    data = d_minus,
+    family = binomial(link = "logit")
+  )
+  beta_g[g] <- coef(fg)[["mvpa"]]
+}
+
+# Delete-one-group jackknife variance
+beta_bar <- mean(beta_g)
+var_jk <- ((G - 1) / G) * sum((beta_g - beta_bar)^2)
+se_jk <- sqrt(var_jk)
+
+# Wald-type CI using jackknife SE
+z <- qnorm(0.975)
+ci_beta <- beta_full + c(-1, 1) * z * se_jk
+or_full <- exp(beta_full)
+or_ci <- exp(ci_beta)
+
+cat("Method 3 (Jackknife): MVPA log-odds slope (full) =", round(beta_full, 6), "\n")
+cat("Grouped jackknife SE =", round(se_jk, 6), "\n")
+cat("95% CI for beta:", round(ci_beta[1], 6), round(ci_beta[2], 6), "\n")
+cat("Odds ratio exp(beta) =", round(or_full, 6), "\n")
+cat("95% CI for OR:", round(or_ci[1], 6), round(or_ci[2], 6), "\n")
+
+saveRDS(
+  list(
+    model = fit0,
+    beta_full = beta_full,
+    beta_reps = beta_g,
+    se_jk = se_jk,
+    ci_beta = ci_beta,
+    or = or_full,
+    ci_or = or_ci,
+    G = G,
+    groups = groups
+  ),
+  "method3_jackknife_results.rds"
+)
+
+```
+
+
