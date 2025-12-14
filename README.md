@@ -124,26 +124,41 @@ Each `.Rmd` file loads the necessary packages at the top.
 
 ---
 
-## Quick Links
+## Quick Links (Clickable Code)
 
-### Real Data Analysis
-- [Method 1: Logistic regression (Wald inference)](analysis/real_method_1.Rmd)
-- [Method 2: Spline logistic regression + bootstrap](analysis/real_method_2.Rmd)
-- [Method 3: Logistic regression + jackknife](analysis/real_method_3.Rmd)
+### Real Data Analysis (Empirical Results)
+These files perform the analysis using the Add Health Waves I and IV data.
 
-### Simulation Studies
-- [Simulation for Method 1](simulations/sim_method_1.Rmd)
-- [Simulation for Method 2](simulations/sim_method_2.Rmd)
-- [Simulation for Method 3](simulations/sim_method_3.Rmd)
+- [Method 1: Logistic regression (Wald inference)](https://github.com/yxinyu77/Add-Health-Project/blob/main/real_method_1.Rmd)
+- [Method 2: Spline logistic regression + bootstrap](https://github.com/yxinyu77/Add-Health-Project/blob/main/real_method_2.Rmd)
+- [Method 3: Logistic regression + jackknife variance estimation](https://github.com/yxinyu77/Add-Health-Project/blob/main/real_method_3.Rmd)
 
-### Data and Documentation
-- [Wave I data](data/wave1.csv)
-- [Wave IV data](data/wave4.csv)
-- [Wave I codebook](documentation/W1inhome_codebook.pdf)
-- [Wave IV codebook](documentation/W4inhome_codebook.pdf)
+---
 
-### Shared Code
-- [Shared data cleaning and setup](shared_setup.R)
+### Simulation Studies (Method Evaluation)
+These files implement Monte Carlo simulations to evaluate the statistical properties
+(bias, variance, MSE, and confidence interval coverage) of the three methods.
+
+- [Simulation for Method 1](https://github.com/yxinyu77/Add-Health-Project/blob/main/sim_method_1.Rmd)
+- [Simulation for Method 2](https://github.com/yxinyu77/Add-Health-Project/blob/main/sim_method_2.Rmd)
+- [Simulation for Method 3](https://github.com/yxinyu77/Add-Health-Project/blob/main/sim_method_3.Rmd)
+
+---
+
+### Simulation Results and Figures
+This file aggregates the simulation outputs and **produces the figures and tables**
+summarizing simulation results reported in the paper.
+
+- [Simulation results and figure generation](https://github.com/yxinyu77/Add-Health-Project/blob/main/simulation.Rmd)
+
+---
+
+### Shared Code and Data Preparation
+This script is sourced by all analysis and simulation files and contains the shared
+data cleaning, variable construction, and preprocessing steps.
+
+- [Shared setup and data preparation](https://github.com/yxinyu77/Add-Health-Project/blob/main/shared_setup.R)
+
 
 ---
 
